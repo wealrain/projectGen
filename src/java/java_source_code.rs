@@ -1,8 +1,10 @@
 use std::{
     path::PathBuf, 
     fs::{File, OpenOptions, self}, 
-    io::Write,  fmt, 
+    io::Write,  fmt, collections::HashSet, 
 };
+
+use serde::de::value;
 
 use crate::Result;
 
@@ -120,7 +122,10 @@ impl Modifier {
 
 }
 
-
+pub enum ValueType {
+    Class,
+    Value,
+}
 
 pub struct JavaLanguage {
     pub name: String,
@@ -138,7 +143,72 @@ impl Default for JavaLanguage {
     }
 }
 
-pub struct JavaAnnotationDeclaration{}
+pub struct JavaAnnotationDeclaration{
+    pub name: String,
+    pub attributes: Vec<JavaAnnotationAttribute>
+}
+
+impl JavaAnnotationDeclaration {
+    pub fn new(name: String) -> JavaAnnotationDeclaration {
+        JavaAnnotationDeclaration {
+            name: name,
+            attributes: vec![]
+        }
+    }
+
+    pub fn add_attribute(&mut self, attribute: JavaAnnotationAttribute) {
+        self.attributes.push(attribute);
+    }
+
+    pub fn determine_imports(&mut self) -> Vec<String> {
+        let mut imports = vec![];
+
+        for attribute in &mut self.attributes {
+            let imports_from_attribute = attribute.determine_imports();
+            imports.extend(imports_from_attribute);
+        }
+
+        imports
+    }
+}
+
+pub struct JavaAnnotationAttribute {
+    pub name: String,
+    pub value_type: ValueType,
+    pub value: Vec<String>
+}
+
+impl JavaAnnotationAttribute {
+    fn new(name: String,value_type: ValueType, value: Vec<String>) -> JavaAnnotationAttribute {
+        JavaAnnotationAttribute {
+            name,
+            value_type,
+            value
+        }
+    }
+
+    fn determine_imports(&mut self) -> Vec<String> {
+        let mut imports = vec![];
+        match self.value_type {
+            ValueType::Class => {
+                for value in self.value.iter_mut() {
+                    if is_import_type(&value) {
+                        imports.push(value.clone());
+                    }
+
+                    let mut simple_type = value.split(".").last().unwrap().to_owned();
+                    simple_type.push_str(".class");
+                    *value = simple_type;
+                     
+                }
+            },
+            _ => {}
+        }
+        imports
+    }
+}
+
+
 pub struct JavaFieldDeclaration{
     pub name: String,
     pub return_type: String,
@@ -161,6 +231,21 @@ impl JavaFieldDeclaration {
     pub fn add_annotation(&mut self, annotation: JavaAnnotationDeclaration) {
         self.annotations.push(annotation);
     }
+
+    pub fn determine_imports(&mut self) -> Vec<String> {
+        let mut imports = vec![];
+        if is_import_type(self.return_type.as_str()) {
+            let simple_type = self.return_type.split(".").last().unwrap().to_owned();
+            imports.push(self.return_type.clone());
+            self.return_type = simple_type;
+        }
+        for annotation in &mut self.annotations {
+            for import in annotation.determine_imports() {
+                imports.push(import);
+            }
+        }
+        return imports;
+    }
 }
 
 pub struct JavaMethodParameter{
@@ -180,6 +265,21 @@ impl JavaMethodParameter {
 
     pub fn add_annotation(&mut self, annotation: JavaAnnotationDeclaration) {
         self.annotations.push(annotation);
+    }
+
+    pub fn determine_imports(&mut self) -> Vec<String> {
+        let mut imports = vec![];
+        if is_import_type(self.param_type.as_str()) {
+            let simple_type = self.param_type.split(".").last().unwrap().to_owned();
+            imports.push(self.param_type.clone());
+            self.param_type = simple_type;
+        }
+        for annotation in &mut self.annotations {
+            for import in annotation.determine_imports() {
+                imports.push(import);
+            }
+        }
+        return imports;
     }
 }
 
@@ -209,10 +309,29 @@ impl JavaMethodDeclaration{
     pub fn add_annotation(&mut self, annotation: JavaAnnotationDeclaration) {
         self.annotations.push(annotation);
     }
+
+    pub fn determine_imports(&mut self) -> Vec<String> {
+        let mut imports = vec![];
+        if is_import_type(self.return_type.as_str()) {
+            let simple_type = self.return_type.split(".").last().unwrap().to_owned();
+            imports.push(self.return_type.clone());
+            self.return_type = simple_type;
+        }
+        for annotation in &mut self.annotations {
+            for import in annotation.determine_imports() {
+                imports.push(import);
+            }
+        }
+        for parameter in &mut self.parameters {
+            for import in parameter.determine_imports() {
+                imports.push(import);
+            }
+        }
+        return imports;
+        
+    }
+
 }
-
- 
-
  
 
 /// java class
@@ -278,8 +397,27 @@ impl JavaCompilationUnit {
         self.type_declarations.push(type_declaration);
     }
 
-    pub fn determine_imports(&self) -> Vec<String> {
-        vec![]
+    pub fn determine_imports(&mut self) -> Vec<String> {
+        let mut imports: Vec<String> = vec![];
+        let types = &mut self.type_declarations;
+        types.iter_mut().for_each(|type_declaration| {
+            if let Some(extend) = type_declaration.extends.as_ref() {
+                imports.push(extend.clone());
+            }
+
+            type_declaration.implements.iter().for_each(|i| {
+                imports.push(i.clone());
+            });
+
+            type_declaration.fields.iter_mut().for_each(|field| {
+                imports.extend(field.determine_imports());
+            });
+
+            type_declaration.methods.iter_mut().for_each(|method| {
+                imports.extend(method.determine_imports());
+            });
+        });
+        return imports;
     }
     
 }
@@ -354,14 +492,14 @@ impl JavaSourceCodeWriter{
 
     pub fn write(&mut self,structure: &JavaSourceStructure,source_code:JavaSourceCode) -> Result<()> {
         let compilation_units = source_code.compilation_units;
-        for compilation_unit in compilation_units {
-            self.write_compilation_unit(structure, compilation_unit)?;
+        for mut compilation_unit in compilation_units {
+            self.write_compilation_unit(structure, &mut compilation_unit)?;
         }
 
         Ok(())
     }
 
-    pub fn write_to(&mut self,file:&mut File,fmt: fmt::Arguments<'_>) -> Result<()> {
+    fn write_to(&mut self,file:&mut File,fmt: fmt::Arguments<'_>) -> Result<()> {
         if self.need_ident {
             write!(file,"{}",self.ident.repeat(self.level as usize))?;
             self.need_ident = false;
@@ -382,12 +520,15 @@ impl JavaSourceCodeWriter{
         Ok(())
     }
 
-    fn write_compilation_unit(&mut self,structure: &JavaSourceStructure,compilation_unit: JavaCompilationUnit) -> Result<()> {
-        let mut file = structure.create_source_file(compilation_unit.package_name.clone(), compilation_unit.name)?;
+    fn write_compilation_unit(&mut self,structure: &JavaSourceStructure,compilation_unit: &mut JavaCompilationUnit) -> Result<()> {
+        let mut file = structure.create_source_file(compilation_unit.package_name.clone(), compilation_unit.name.clone())?;
+        // write package
         self.write_to(&mut file, format_args!("package {};\n\n",compilation_unit.package_name))?;
-        // todo write import
-        // todo write comment
-        let type_declarations =  compilation_unit.type_declarations;
+        // write imports
+        self.write_imports(&mut file,compilation_unit.determine_imports())?;
+        self.write_to(&mut file, format_args!("\n"))?;
+        // write class
+        let type_declarations =  &compilation_unit.type_declarations;
         for type_declaration in type_declarations {
             // todo write annotations
             let modifers_str = type_declaration.modifiers.gen_type_modifiers();
@@ -397,11 +538,11 @@ impl JavaSourceCodeWriter{
             self.write_to(&mut file, format_args!(" {{\n\n"))?;
             self.need_ident();
             if type_declaration.fields.len() > 0 {
-                self.write_type_fields(&mut file,type_declaration.fields)?;
+                self.write_type_fields(&mut file,&type_declaration.fields)?;
             }
             
             if type_declaration.methods.len() > 0 {
-                self.write_type_methods(&mut file,type_declaration.methods)?;
+                self.write_type_methods(&mut file,&type_declaration.methods)?;
             }
 
             self.write_to(&mut file, format_args!("\n}}"))?;
@@ -411,7 +552,16 @@ impl JavaSourceCodeWriter{
         Ok(())
     }
 
-    fn write_type_fields(&mut self,file:&mut File,field_declarations:Vec<JavaFieldDeclaration>)->Result<()> {
+    fn write_imports(&mut self,file:&mut File,imports:Vec<String>)->Result<()> {
+        let unique_vec: Vec<String> = imports.into_iter().collect::<HashSet<_>>().into_iter().collect();
+        for import in unique_vec {
+            self.write_to(file, format_args!("import {};\n",import))?;
+        }
+
+        Ok(())
+    }
+
+    fn write_type_fields(&mut self,file:&mut File,field_declarations:&Vec<JavaFieldDeclaration>)->Result<()> {
         
         self.write_with_indent(file,|file,writer|{
             for field_declaration in field_declarations {
@@ -419,9 +569,9 @@ impl JavaSourceCodeWriter{
                 writer.need_ident(); 
                 let modfier_str = field_declaration.modifiers.gen_field_modifiers();
                 writer.write_to(file, format_args!("{} ",modfier_str))?;
-                writer.write_to(file, format_args!("{} ",get_unqualified_name(field_declaration.return_type)))?;
+                writer.write_to(file, format_args!("{} ",get_unqualified_name(field_declaration.return_type.clone())))?;
                 writer.write_to(file, format_args!("{}",field_declaration.name))?;
-                if let Some(value) = field_declaration.value {
+                if let Some(value) = &field_declaration.value {
                     writer.write_to(file, format_args!(" = {}",value))?;
                 }
                 writer.write_to(file, format_args!(";\n\n"))?;
@@ -434,7 +584,7 @@ impl JavaSourceCodeWriter{
         Ok(())
     }
 
-    fn write_type_methods(&mut self,file:&mut File,method_declarations:Vec<JavaMethodDeclaration>)->Result<()> {
+    fn write_type_methods(&mut self,file:&mut File,method_declarations:&Vec<JavaMethodDeclaration>)->Result<()> {
         
         self.write_with_indent(file,|file,writer|{
             for method_declaration in method_declarations {
@@ -442,8 +592,8 @@ impl JavaSourceCodeWriter{
                 writer.need_ident();
                 let modfier_str = method_declaration.modifiers.gen_method_modifiers();
                 writer.write_to(file, format_args!("{} ",modfier_str))?;
-                writer.write_to(file, format_args!("{} {}(",get_unqualified_name(method_declaration.return_type),method_declaration.name))?;
-                let params = method_declaration.parameters;
+                writer.write_to(file, format_args!("{} {}(",get_unqualified_name(method_declaration.return_type.clone()),method_declaration.name))?;
+                let params = &method_declaration.parameters;
                 if params.len() > 0 {
                     writer.write_method_paramters(file, params)?;
                 }
@@ -463,7 +613,7 @@ impl JavaSourceCodeWriter{
         Ok(())
     }
 
-    fn write_method_paramters(&mut self,file:&mut File,parameters:Vec<JavaMethodParameter>) -> Result<()> {
+    fn write_method_paramters(&mut self,file:&mut File,parameters:&Vec<JavaMethodParameter>) -> Result<()> {
         for (i,param) in parameters.iter().enumerate() {
             if i>0 {
                 self.write_to(file, format_args!(","))?;
@@ -484,5 +634,9 @@ fn get_unqualified_name(name: String) -> String{
     }
 
     name.rsplit(".").next().to_owned().unwrap().to_string()
+}
+
+fn is_import_type(ty: &str) -> bool{
+    ty.contains(".") && !ty.starts_with("java.lang.")
 }
 
