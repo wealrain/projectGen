@@ -34,9 +34,9 @@ fn main() {
     
 
     let mut method = JavaMethodDeclaration::new("test", "void", 2);
-    let param = JavaMethodParameter::new("card","cn.ljyun.entity.Card");
+    let param = JavaMethodParameter::new("card","cn.ljyun.Card");
     method.add_parameter(param);
-    let st1 = JavaMethodStatement::new("$T $V = new $T();",vec!["cn.ljyun.entity.Card","card","cn.ljyun.entity.Card"]);
+    let st1 = JavaMethodStatement::new("$T $V = new $T();",vec!["cn.ljyun.Card","card","cn.ljyun.entity.Card"]);
     let st2 = JavaMethodStatement::new("System.out.println($V.getName());",vec!["card"]);
     method.add_statement(st1);
     method.add_statement(st2);

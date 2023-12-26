@@ -117,7 +117,7 @@ impl CompilationUnitWriter {
     fn write_imports(&mut self,file:&mut File,imports:Vec<String>)->Result<()> {
         let mut class_map = HashMap::<String,String>::new();
         imports.iter().for_each(|x|{
-            class_map.insert(self.get_unqualified_name(x.clone()),x.clone());
+            class_map.insert(x.clone().rsplit(".").next().to_owned().unwrap().to_string(),x.clone());
         });
         let imports:HashSet<String> = class_map.values().cloned().collect();
         self.imports = imports.clone();
@@ -175,12 +175,14 @@ impl CompilationUnitWriter {
                 let mut attrs: Vec<String> = vec![];
                 match attribute.value_type{
                     ValueType::Class => {
-                        // attrs.push(attribute.value.join("."));
+                        attribute.value.iter().for_each(|x|{
+                            attrs.push(self.get_unqualified_name(x.clone()) + ".class");
+                        });
                     },
                     _ =>{}
                 }
     
-                self.write_to(file, format_args!( "{}={{{}}}", attribute.name, attribute.value.join(",")))?;
+                self.write_to(file, format_args!( "{}={{{}}}", attribute.name, attrs.join(",")))?;
             }
             if !annotation.attributes.is_empty() {
                 self.write_to(file, format_args!(")"))?;
@@ -270,7 +272,7 @@ impl CompilationUnitWriter {
         }
         
         if name.starts_with("java.lang.") {
-            return name.rsplit(".").last().unwrap().to_string();
+            return  name.rsplit(".").next().to_owned().unwrap().to_string()
         }
 
         if !self.imports.contains(&name) {
