@@ -6,7 +6,7 @@ use std::{
 
 use serde::de::value;
 
-use crate::Result;
+use crate::{Result, parse};
 
 pub struct Modifier {
     pub modifiers: u16,
@@ -127,6 +127,12 @@ pub enum ValueType {
     Value,
 }
 
+impl Default for ValueType {
+    fn default() -> ValueType {
+        ValueType::Value
+    }
+}
+
 pub struct JavaLanguage {
     pub name: String,
     pub version: String,
@@ -149,9 +155,9 @@ pub struct JavaAnnotationDeclaration{
 }
 
 impl JavaAnnotationDeclaration {
-    pub fn new(name: String) -> JavaAnnotationDeclaration {
+    pub fn new(name: &str) -> JavaAnnotationDeclaration {
         JavaAnnotationDeclaration {
-            name: name,
+            name: name.to_owned(),
             attributes: vec![]
         }
     }
@@ -172,6 +178,32 @@ impl JavaAnnotationDeclaration {
     }
 }
 
+impl fmt::Display for JavaAnnotationDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "@{}", self.name)?;
+        if !self.attributes.is_empty() {
+            write!(f,"(")?;
+        }
+        let mut need_comma = false;
+        for attribute in &self.attributes {
+            if need_comma {
+                write!(f, ",")?;
+            } else {
+                need_comma = true;
+            }
+            if attribute.name == "value" {
+                write!(f, "\"{}\"", attribute.value.join(","))?;
+                continue;
+            }
+            write!(f, "{}={{{}}}", attribute.name, attribute.value.join(","))?;
+        }
+        if !self.attributes.is_empty() {
+            write!(f,")")?;
+        }
+        Ok(())
+    }
+}
+
 pub struct JavaAnnotationAttribute {
     pub name: String,
     pub value_type: ValueType,
@@ -179,11 +211,11 @@ pub struct JavaAnnotationAttribute {
 }
 
 impl JavaAnnotationAttribute {
-    fn new(name: String,value_type: ValueType, value: Vec<String>) -> JavaAnnotationAttribute {
+    pub fn new(name: &str,value_type: ValueType, value: Vec<&str>) -> JavaAnnotationAttribute {
         JavaAnnotationAttribute {
-            name,
+            name:name.to_owned(),
             value_type,
-            value
+            value: value.iter().map(|&s| s.to_owned()).collect()
         }
     }
 
@@ -289,6 +321,7 @@ pub struct JavaMethodDeclaration{
     pub modifiers: Modifier, 
     pub annotations: Vec<JavaAnnotationDeclaration>,
     pub parameters: Vec<JavaMethodParameter>,
+    pub statements: Vec<JavaMethodStatement>
 }
 
 impl JavaMethodDeclaration{
@@ -299,6 +332,7 @@ impl JavaMethodDeclaration{
             modifiers:Modifier::new(modifiers),
             annotations: vec![],
             parameters: vec![],
+            statements: vec![]
         }
     }
 
@@ -308,6 +342,10 @@ impl JavaMethodDeclaration{
 
     pub fn add_annotation(&mut self, annotation: JavaAnnotationDeclaration) {
         self.annotations.push(annotation);
+    }
+
+    pub fn add_statement(&mut self, statement: JavaMethodStatement) {
+        self.statements.push(statement);
     }
 
     pub fn determine_imports(&mut self) -> Vec<String> {
@@ -327,12 +365,67 @@ impl JavaMethodDeclaration{
                 imports.push(import);
             }
         }
+
+        for statement in &self.statements {
+            for import in statement.imports.clone() {
+                imports.push(import);
+            }
+        }
         return imports;
         
     }
 
 }
- 
+
+pub struct JavaMethodStatement {
+    pub statement: String,
+    pub imports: Vec<String>,
+}
+
+impl JavaMethodStatement {
+    pub fn new(statement: &str,args:Vec<&str>) -> JavaMethodStatement {
+        JavaMethodStatement{
+            statement: Self::parse_statement(statement,args.clone()),
+            imports: Self::parse_imports(args),
+        }
+    }
+
+    fn parse_imports(args:Vec<&str>) -> Vec<String> {
+        args
+            .iter()
+            .filter(|&s| is_import_type(s))
+            .map(|&s|s.to_owned())
+            .collect()
+        
+    }
+
+    fn parse_statement(statement: &str,args:Vec<&str>) -> String {
+        let statement = statement.trim_end_matches('$');
+        let mut result = String::from(statement);
+        let mut arg_index = 0;
+        for p in 0..statement.len() {
+            if statement.chars().nth(p).unwrap() == '$' {
+                let param_name = statement.chars().nth(p+1).unwrap();
+                if param_name == 'T' {
+                    if is_import_type(args[arg_index]) {
+                        let replace_value = get_unqualified_name(args[arg_index].to_owned());
+                        result = result.replacen("$T", &replace_value,1);
+                    }
+                   
+                } else if param_name == 'V' {
+                    result = result.replacen("$V", args[arg_index],1);
+                }  
+                arg_index += 1;
+            }
+        }
+        result
+    }
+
+    pub fn determine_imports(&self) -> Vec<String> {
+        self.imports.clone()
+    }
+     
+}
 
 /// java class
 pub struct JavaTypeDeclaration{
@@ -474,161 +567,7 @@ impl JavaSourceStructure{
     }
 }
 
-#[derive(Debug,Clone)]
-pub struct JavaSourceCodeWriter{
-    level: u8,
-    ident: String,
-    need_ident: bool,
-}
-
-impl JavaSourceCodeWriter{
-    pub fn new() -> JavaSourceCodeWriter{
-        JavaSourceCodeWriter{
-            level: 0,
-            ident: "    ".to_string(),
-            need_ident: false,
-        }
-    }
-
-    pub fn write(&mut self,structure: &JavaSourceStructure,source_code:JavaSourceCode) -> Result<()> {
-        let compilation_units = source_code.compilation_units;
-        for mut compilation_unit in compilation_units {
-            self.write_compilation_unit(structure, &mut compilation_unit)?;
-        }
-
-        Ok(())
-    }
-
-    fn write_to(&mut self,file:&mut File,fmt: fmt::Arguments<'_>) -> Result<()> {
-        if self.need_ident {
-            write!(file,"{}",self.ident.repeat(self.level as usize))?;
-            self.need_ident = false;
-        }
-        file.write_fmt(fmt)?;
-        Ok(())
-    }
-
-
-    fn need_ident(&mut self) {
-        self.need_ident = true;
-    }
-
-    fn write_with_indent<O:FnOnce(&mut File,&mut JavaSourceCodeWriter) -> Result<()>>(&mut self,file:&mut File,mut op:O) -> Result<()> {
-        self.level += 1;
-        op(file,self)?;
-        self.level -= 1;
-        Ok(())
-    }
-
-    fn write_compilation_unit(&mut self,structure: &JavaSourceStructure,compilation_unit: &mut JavaCompilationUnit) -> Result<()> {
-        let mut file = structure.create_source_file(compilation_unit.package_name.clone(), compilation_unit.name.clone())?;
-        // write package
-        self.write_to(&mut file, format_args!("package {};\n\n",compilation_unit.package_name))?;
-        // write imports
-        self.write_imports(&mut file,compilation_unit.determine_imports())?;
-        self.write_to(&mut file, format_args!("\n"))?;
-        // write class
-        let type_declarations =  &compilation_unit.type_declarations;
-        for type_declaration in type_declarations {
-            // todo write annotations
-            let modifers_str = type_declaration.modifiers.gen_type_modifiers();
-            self.write_to(&mut file, format_args!("{} class {} ",modifers_str,type_declaration.name))?;
-            // todo write extends
-            // todo write implements
-            self.write_to(&mut file, format_args!(" {{\n\n"))?;
-            self.need_ident();
-            if type_declaration.fields.len() > 0 {
-                self.write_type_fields(&mut file,&type_declaration.fields)?;
-            }
-            
-            if type_declaration.methods.len() > 0 {
-                self.write_type_methods(&mut file,&type_declaration.methods)?;
-            }
-
-            self.write_to(&mut file, format_args!("\n}}"))?;
-        }
-        
-        
-        Ok(())
-    }
-
-    fn write_imports(&mut self,file:&mut File,imports:Vec<String>)->Result<()> {
-        let unique_vec: Vec<String> = imports.into_iter().collect::<HashSet<_>>().into_iter().collect();
-        for import in unique_vec {
-            self.write_to(file, format_args!("import {};\n",import))?;
-        }
-
-        Ok(())
-    }
-
-    fn write_type_fields(&mut self,file:&mut File,field_declarations:&Vec<JavaFieldDeclaration>)->Result<()> {
-        
-        self.write_with_indent(file,|file,writer|{
-            for field_declaration in field_declarations {
-                // todo write annotation
-                writer.need_ident(); 
-                let modfier_str = field_declaration.modifiers.gen_field_modifiers();
-                writer.write_to(file, format_args!("{} ",modfier_str))?;
-                writer.write_to(file, format_args!("{} ",get_unqualified_name(field_declaration.return_type.clone())))?;
-                writer.write_to(file, format_args!("{}",field_declaration.name))?;
-                if let Some(value) = &field_declaration.value {
-                    writer.write_to(file, format_args!(" = {}",value))?;
-                }
-                writer.write_to(file, format_args!(";\n\n"))?;
-                
-            }
-            
-            Ok(())
-        })?;
-
-        Ok(())
-    }
-
-    fn write_type_methods(&mut self,file:&mut File,method_declarations:&Vec<JavaMethodDeclaration>)->Result<()> {
-        
-        self.write_with_indent(file,|file,writer|{
-            for method_declaration in method_declarations {
-                // todo write annotations
-                writer.need_ident();
-                let modfier_str = method_declaration.modifiers.gen_method_modifiers();
-                writer.write_to(file, format_args!("{} ",modfier_str))?;
-                writer.write_to(file, format_args!("{} {}(",get_unqualified_name(method_declaration.return_type.clone()),method_declaration.name))?;
-                let params = &method_declaration.parameters;
-                if params.len() > 0 {
-                    writer.write_method_paramters(file, params)?;
-                }
-                writer.write_to(file, format_args!(") {{\n"))?;
-                // todo write codeblock
-                
-                // method over
-                writer.write_to(file, format_args!("\n"))?;
-                writer.need_ident();
-                writer.write_to(file, format_args!("}}\n"))?;
-            }
-            Ok(())   
-        })?;
-        
-        
-
-        Ok(())
-    }
-
-    fn write_method_paramters(&mut self,file:&mut File,parameters:&Vec<JavaMethodParameter>) -> Result<()> {
-        for (i,param) in parameters.iter().enumerate() {
-            if i>0 {
-                self.write_to(file, format_args!(","))?;
-            }
-             // todo write annotations
-            self.write_to(file, format_args!("{} {}",get_unqualified_name(param.param_type.to_string()),param.name))?;
-        }
-        
-        Ok(())
-    }
-
-
-}
-
-fn get_unqualified_name(name: String) -> String{
+pub fn get_unqualified_name(name: String) -> String{
     if !name.contains(".") {
         return name;
     }
