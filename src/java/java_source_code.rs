@@ -166,10 +166,13 @@ impl JavaAnnotationDeclaration {
         self.attributes.push(attribute);
     }
 
-    pub fn determine_imports(&mut self) -> Vec<String> {
+    pub fn determine_imports(&self) -> Vec<String> {
         let mut imports = vec![];
-
-        for attribute in &mut self.attributes {
+        if is_import_type(&self.name) {
+            imports.push(self.name.clone());
+        }
+        
+        for attribute in &self.attributes {
             let imports_from_attribute = attribute.determine_imports();
             imports.extend(imports_from_attribute);
         }
@@ -178,31 +181,6 @@ impl JavaAnnotationDeclaration {
     }
 }
 
-impl fmt::Display for JavaAnnotationDeclaration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "@{}", self.name)?;
-        if !self.attributes.is_empty() {
-            write!(f,"(")?;
-        }
-        let mut need_comma = false;
-        for attribute in &self.attributes {
-            if need_comma {
-                write!(f, ",")?;
-            } else {
-                need_comma = true;
-            }
-            if attribute.name == "value" {
-                write!(f, "\"{}\"", attribute.value.join(","))?;
-                continue;
-            }
-            write!(f, "{}={{{}}}", attribute.name, attribute.value.join(","))?;
-        }
-        if !self.attributes.is_empty() {
-            write!(f,")")?;
-        }
-        Ok(())
-    }
-}
 
 pub struct JavaAnnotationAttribute {
     pub name: String,
@@ -219,19 +197,14 @@ impl JavaAnnotationAttribute {
         }
     }
 
-    fn determine_imports(&mut self) -> Vec<String> {
+    fn determine_imports(&self) -> Vec<String> {
         let mut imports = vec![];
         match self.value_type {
             ValueType::Class => {
-                for value in self.value.iter_mut() {
+                for value in self.value.iter() {
                     if is_import_type(&value) {
                         imports.push(value.clone());
                     }
-
-                    let mut simple_type = value.split(".").last().unwrap().to_owned();
-                    simple_type.push_str(".class");
-                    *value = simple_type;
-                     
                 }
             },
             _ => {}
@@ -264,14 +237,12 @@ impl JavaFieldDeclaration {
         self.annotations.push(annotation);
     }
 
-    pub fn determine_imports(&mut self) -> Vec<String> {
+    pub fn determine_imports(&self) -> Vec<String> {
         let mut imports = vec![];
         if is_import_type(self.return_type.as_str()) {
-            let simple_type = self.return_type.split(".").last().unwrap().to_owned();
             imports.push(self.return_type.clone());
-            self.return_type = simple_type;
         }
-        for annotation in &mut self.annotations {
+        for annotation in &self.annotations {
             for import in annotation.determine_imports() {
                 imports.push(import);
             }
@@ -299,14 +270,12 @@ impl JavaMethodParameter {
         self.annotations.push(annotation);
     }
 
-    pub fn determine_imports(&mut self) -> Vec<String> {
+    pub fn determine_imports(&self) -> Vec<String> {
         let mut imports = vec![];
         if is_import_type(self.param_type.as_str()) {
-            let simple_type = self.param_type.split(".").last().unwrap().to_owned();
             imports.push(self.param_type.clone());
-            self.param_type = simple_type;
         }
-        for annotation in &mut self.annotations {
+        for annotation in &self.annotations {
             for import in annotation.determine_imports() {
                 imports.push(import);
             }
@@ -348,26 +317,24 @@ impl JavaMethodDeclaration{
         self.statements.push(statement);
     }
 
-    pub fn determine_imports(&mut self) -> Vec<String> {
+    pub fn determine_imports(&self) -> Vec<String> {
         let mut imports = vec![];
         if is_import_type(self.return_type.as_str()) {
-            let simple_type = self.return_type.split(".").last().unwrap().to_owned();
             imports.push(self.return_type.clone());
-            self.return_type = simple_type;
         }
-        for annotation in &mut self.annotations {
+        for annotation in &self.annotations {
             for import in annotation.determine_imports() {
                 imports.push(import);
             }
         }
-        for parameter in &mut self.parameters {
+        for parameter in &self.parameters {
             for import in parameter.determine_imports() {
                 imports.push(import);
             }
         }
 
         for statement in &self.statements {
-            for import in statement.imports.clone() {
+            for import in statement.determine_imports() {
                 imports.push(import);
             }
         }
@@ -379,50 +346,25 @@ impl JavaMethodDeclaration{
 
 pub struct JavaMethodStatement {
     pub statement: String,
-    pub imports: Vec<String>,
+    pub args: Vec<String>,
 }
 
 impl JavaMethodStatement {
     pub fn new(statement: &str,args:Vec<&str>) -> JavaMethodStatement {
+        let statement = statement.trim_end_matches('$');
         JavaMethodStatement{
-            statement: Self::parse_statement(statement,args.clone()),
-            imports: Self::parse_imports(args),
+            statement: statement.to_owned(),
+            args: args.iter().map(|&s| s.to_owned()).collect(),
         }
     }
 
-    fn parse_imports(args:Vec<&str>) -> Vec<String> {
-        args
+    fn determine_imports(&self) -> Vec<String> {
+        self.args
             .iter()
             .filter(|&s| is_import_type(s))
-            .map(|&s|s.to_owned())
+            .map(|s| s.to_owned())
             .collect()
         
-    }
-
-    fn parse_statement(statement: &str,args:Vec<&str>) -> String {
-        let statement = statement.trim_end_matches('$');
-        let mut result = String::from(statement);
-        let mut arg_index = 0;
-        for p in 0..statement.len() {
-            if statement.chars().nth(p).unwrap() == '$' {
-                let param_name = statement.chars().nth(p+1).unwrap();
-                if param_name == 'T' {
-                    if is_import_type(args[arg_index]) {
-                        let replace_value = get_unqualified_name(args[arg_index].to_owned());
-                        result = result.replacen("$T", &replace_value,1);
-                    }
-                   
-                } else if param_name == 'V' {
-                    result = result.replacen("$V", args[arg_index],1);
-                }  
-                arg_index += 1;
-            }
-        }
-        result
-    }
-
-    pub fn determine_imports(&self) -> Vec<String> {
-        self.imports.clone()
     }
      
 }
@@ -483,6 +425,7 @@ impl JavaCompilationUnit {
             package_name:package_name.to_owned(),
             name:name.to_owned(),
             type_declarations: vec![],
+
         }
     }
 
@@ -490,10 +433,10 @@ impl JavaCompilationUnit {
         self.type_declarations.push(type_declaration);
     }
 
-    pub fn determine_imports(&mut self) -> Vec<String> {
+    pub fn determine_imports(&self) -> Vec<String> {
         let mut imports: Vec<String> = vec![];
-        let types = &mut self.type_declarations;
-        types.iter_mut().for_each(|type_declaration| {
+        let types = &self.type_declarations;
+        types.iter().for_each(|type_declaration| {
             if let Some(extend) = type_declaration.extends.as_ref() {
                 imports.push(extend.clone());
             }
@@ -502,11 +445,11 @@ impl JavaCompilationUnit {
                 imports.push(i.clone());
             });
 
-            type_declaration.fields.iter_mut().for_each(|field| {
+            type_declaration.fields.iter().for_each(|field| {
                 imports.extend(field.determine_imports());
             });
 
-            type_declaration.methods.iter_mut().for_each(|method| {
+            type_declaration.methods.iter().for_each(|method| {
                 imports.extend(method.determine_imports());
             });
         });
@@ -567,13 +510,7 @@ impl JavaSourceStructure{
     }
 }
 
-pub fn get_unqualified_name(name: String) -> String{
-    if !name.contains(".") {
-        return name;
-    }
 
-    name.rsplit(".").next().to_owned().unwrap().to_string()
-}
 
 fn is_import_type(ty: &str) -> bool{
     ty.contains(".") && !ty.starts_with("java.lang.")
