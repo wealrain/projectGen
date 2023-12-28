@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::Result;
+use project_gen_core::Result;
 use super::common::DataType;
 use std::{fs::File, io::BufReader, collections::HashMap};
 

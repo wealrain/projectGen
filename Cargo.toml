@@ -1,4 +1,13 @@
-[package]
+[workspace]
+resolver = "2"
+members = [
+    "project_gen_core",
+    "project_gen_java",
+    "project_gen_ts",
+    "project_gen_parser",
+]
+
+[workspace.package]
 name = "project_gen"
 version = "0.1.0"
 edition = "2021"
@@ -7,7 +16,12 @@ authors = ["zhoutaosheng 1595875780@qq.com"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
+[workspace.dependencies]
+project_gen_core = {path = "./project_gen_core"}
+project_gen_java = {path = "./project_gen_java"}
+project_gen_ts = {path = "./project_gen_ts"}
+project_gen_parser = {path = "./project_gen_parser"}
+
 serde = {version = "1.0", features = ["derive"]}
 serde_yaml = "0.9"
 failure = "0.1.8"

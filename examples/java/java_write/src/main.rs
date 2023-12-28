@@ -1,4 +1,4 @@
-use project_gen::java::{
+use project_gen_java::{
     JavaSourceCodeWriter,
     JavaSourceStructure, 
     JavaSourceCode, 
@@ -12,6 +12,7 @@ use project_gen::java::{
     JavaAnnotationAttribute, 
     ValueType
 };
+
 fn main() {
     let root_dir = std::env::current_dir().unwrap();
     let java_structure = JavaSourceStructure::new(root_dir);

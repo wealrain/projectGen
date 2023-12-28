@@ -1,12 +1,9 @@
 use std::{
     path::PathBuf, 
     fs::{File, OpenOptions, self}, 
-    io::Write,  fmt, collections::HashSet, 
 };
 
-use serde::de::value;
-
-use crate::{Result, parse};
+use project_gen_core::Result;
 
 pub struct Modifier {
     pub modifiers: u16,

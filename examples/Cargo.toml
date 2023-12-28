@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["java/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace.dependencies]
+project_gen_java = { path = "../project_gen_java" }
+project_gen_ts = { path = "../project_gen_ts" }
+project_gen_parser = { path = "../project_gen_parser" }
+ 

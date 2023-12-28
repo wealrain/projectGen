@@ -5,7 +5,7 @@ use std::{
     collections::{HashSet, HashMap}, 
 };
 
-use crate::Result;
+use project_gen_core::Result;
 
 use super::{
     JavaSourceStructure, 

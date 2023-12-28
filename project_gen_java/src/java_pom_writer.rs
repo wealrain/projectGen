@@ -2,7 +2,7 @@ use std::{io::Write, fs::{OpenOptions, File}, path::PathBuf};
 
 use quick_xml::{writer::Writer, events::{BytesStart, Event, BytesEnd, BytesText}, Error};
 
-use crate::Result;
+use project_gen_core::Result;
 
 use super::{POM, Dependency, Property, Build, Plugin};
 

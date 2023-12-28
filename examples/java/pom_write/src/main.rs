@@ -1,4 +1,4 @@
-use project_gen::java::{POMWriter, POM, Property};
+use project_gen_java::{POMWriter, POM, Property};
 
 fn main() {
     let mut pom_writer = POMWriter::default();
@@ -6,6 +6,6 @@ fn main() {
     pom.add_property(Property::new("maven.compiler.source","8"));
     pom.add_property(Property::new("maven.compiler.target","8"));
     let root_dir = std::env::current_dir().unwrap();
-    let dir = root_dir.join("java");
-    pom_writer.write_to(&pom,dir);
+    // let dir = root_dir.join("java");
+    pom_writer.write_to(&pom,root_dir);
 }

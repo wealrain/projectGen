@@ -54,6 +54,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
+name = "example_java_write"
+version = "0.1.0"
+dependencies = [
+ "project_gen_java",
+]
+
+[[package]]
+name = "example_pom_write"
+version = "0.1.0"
+dependencies = [
+ "project_gen_java",
+]
+
+[[package]]
 name = "failure"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -159,19 +173,6 @@ dependencies = [
  "project_gen_core",
  "quick-xml",
 ]
-
-[[package]]
-name = "project_gen_parser"
-version = "0.1.0"
-dependencies = [
- "project_gen_core",
- "serde",
- "serde_yaml",
-]
-
-[[package]]
-name = "project_gen_ts"
-version = "0.1.0"
 
 [[package]]
 name = "quick-xml"
