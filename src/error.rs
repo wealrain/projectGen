@@ -1,4 +1,4 @@
-use std::{io, string::FromUtf8Error};
+use std::{io, string::FromUtf8Error, str::Utf8Error};
 use failure::Fail;
 
 #[derive(Debug, Fail)]
@@ -9,12 +9,18 @@ pub enum PGError {
   /// serde error
   #[fail(display = "{}",_0)]
   Serde(#[cause] serde_yaml::Error),
+  /// quick_xml error
+  #[fail(display = "{}",_0)]
+  Xml(#[cause] quick_xml::Error),
   ///
   #[fail(display = "{}",_0)]
   StringError(String),
   ///
   #[fail(display = "UTF-8 error: {}",_0)]
   Utf8(#[cause] FromUtf8Error),
+
+  #[fail(display = "UTF-8 error: {}",_0)]
+  Utf82(#[cause] Utf8Error),
 }
 
 impl From<io::Error> for PGError {
@@ -32,6 +38,18 @@ impl From<serde_yaml::Error> for PGError {
 impl From<FromUtf8Error> for PGError {
     fn from(value: FromUtf8Error) -> Self {
         PGError::Utf8(value)
+    }
+}
+
+impl From<Utf8Error> for PGError {
+    fn from(value: Utf8Error) -> Self {
+        PGError::Utf82(value)
+    }
+}
+
+impl From<quick_xml::Error> for PGError {
+    fn from(value: quick_xml::Error) -> Self {
+        PGError::Xml(value)
     }
 }
 

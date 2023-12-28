@@ -1,8 +1,16 @@
-mod pom;
+mod java_pom;
+mod java_pom_writer;
 mod java_source_code;
 mod java_source_writer;
 
-pub use pom::{Dependency,MavenRepository};
+pub use java_pom::{
+    Property,
+    Exclusion,
+    Build,
+    Plugin,
+    Dependency,
+    POM
+};
 pub use java_source_code::{
     JavaSourceCode,
     JavaAnnotationDeclaration,
@@ -16,4 +24,5 @@ pub use java_source_code::{
     JavaAnnotationAttribute,
     ValueType
 };
+pub use java_pom_writer::POMWriter;
 pub use java_source_writer::JavaSourceCodeWriter;
